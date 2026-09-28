@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTTR Tracker - Highflow Industries</title>
+<style>
+  :root {
+    --blue: #1a5fb4;
+    --blue-light: #e8f0fb;
+    --grey: #f4f5f7;
+    --border: #d8dce1;
+    --text: #222;
+    --ok: #2e7d32;
+    --high: #c62828;
+    /* dataviz tokens */
+    --chart-surface: #fcfcfb;
+    --seq-blue: #2a78d6;
+    --seq-blue-soft: #9ec5f4;
+    --ink-primary: #0b0b0b;
+    --ink-secondary: #52514e;
+    --ink-muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --good: #0ca30c;
+    --warning: #b8860b;
+    --critical: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: var(--grey); color: var(--text); }
+  header { background: var(--blue); color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
+  nav { display: flex; background: #fff; border-bottom: 1px solid var(--border); }
+  nav button {
+    padding: 12px 18px; border: none; background: none; cursor: pointer;
+    font-size: 14px; border-bottom: 3px solid transparent; color: #555;
+  }
+  nav button.active { border-bottom-color: var(--blue); color: var(--blue); font-weight: 600; }
+  main { padding: 18px; max-width: 1500px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 16px; color: var(--blue); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  label { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
+  input, select, textarea {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px;
+  }
+  textarea { min-height: 90px; resize: vertical; font-family: monospace; }
+  button.primary {
+    background: var(--blue); color: #fff; border: none; padding: 8px 16px;
+    border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 10px;
+  }
+  button.primary:hover { background: #154a8f; }
+  button.secondary {
+    background: #fff; color: var(--blue); border: 1px solid var(--blue); padding: 6px 12px;
+    border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  button.danger { color: var(--high); border-color: var(--high); background: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; white-space: nowrap; }
+  th { background: var(--blue-light); color: var(--blue); position: sticky; top: 0; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+  .table-wrap { overflow-x: auto; max-height: 65vh; overflow-y: auto; }
+  .pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .pill.Closed { background: #e6f4ea; color: var(--ok); }
+  .pill.Open, .pill.InProgress, .pill.PendingSpare { background: #fff3e0; color: #e65100; }
+  .vs-ok { color: var(--ok); font-weight: 600; }
+  .vs-high { color: var(--high); font-weight: 600; }
+  .row-actions { display: flex; gap: 6px; }
+  .save-status { font-size: 12px; margin-left: 10px; white-space: nowrap; }
+  .save-status.pending { color: var(--ink-secondary, #555); font-style: italic; }
+  .save-status.saved { color: var(--ok); font-weight: 600; }
+  .save-status.error { color: var(--high); font-weight: 600; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    background: #fff; border: 1px solid var(--border); border-top: none;
+    max-height: 260px; overflow-y: auto; border-radius: 0 0 4px 4px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+  .autocomplete-item { padding: 6px 8px; font-size: 13px; cursor: pointer; }
+  .autocomplete-item:hover, .autocomplete-item.active { background: var(--blue-light); }
+  .autocomplete-item .ac-price { float: right; color: #888; font-size: 12px; }
+  .autocomplete-empty { padding: 8px; font-size: 12px; color: #888; }
+  .summary-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+  .summary-row > div { min-width: 160px; }
+  .muted { color: #888; font-size: 12px; }
+
+  /* Filters */
+  .filter-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 12px 0; padding: 10px; background: var(--grey); border-radius: 4px; }
+  .filter-row > div { min-width: 150px; }
+  .filter-row label { margin-bottom: 3px; }
+
+  /* KPI / stat tiles */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat-tile { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
+  .stat-label { font-size: 12px; color: var(--ink-secondary); margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 600; color: var(--ink-primary); font-variant-numeric: proportional-nums; }
+
+  /* Charts */
+  .viz-root { color-scheme: light; }
+  .chart-empty { color: var(--ink-muted); font-size: 13px; padding: 30px 0; text-align: center; }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; background: var(--ink-primary); color: #fff;
+    font-size: 12px; padding: 6px 10px; border-radius: 4px; white-space: nowrap; z-index: 10;
+    transform: translate(-50%, -110%); opacity: 0; transition: opacity 0.08s;
+  }
+  .chart-tooltip.show { opacity: 1; }
+  .chart-tooltip .tt-value { font-weight: 700; }
+  .chart-tooltip .tt-label { color: #c3c2b7; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-name { width: 160px; font-size: 12px; color: var(--ink-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; background: var(--gridline); border-radius: 4px; height: 24px; position: relative; }
+  .bar-fill { background: var(--seq-blue); height: 24px; border-radius: 4px; min-width: 2px; }
+  .bar-value { font-size: 12px; color: var(--ink-primary); font-weight: 600; margin-left: 8px; width: 70px; flex-shrink: 0; }
+  .bar-fill { border-radius: 0 4px 4px 0; }
+  #chart-trend, #chart-equip { position: relative; min-height: 60px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1>Maintenance Breakdown & MTTR Tracker</h1>
+      <p>Highflow Industries Pvt. Ltd. — Maintenance Department</p>
+    </div>
+    <div style="text-align:right; font-size:12px;">
+      <div id="current-user-email" style="font-weight:600; margin-bottom:6px;"></div>
+      <button id="btn-logout" style="background:none; border:1px solid rgba(255,255,255,0.6); color:#fff; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Logout</button>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="log">Breakdown Log</button>
+  <button class="tab-btn" data-tab="master">Master Data</button>
+  <button class="tab-btn" data-tab="daily">Daily Monitoring</button>
+  <button class="tab-btn" data-tab="summary">Dept & Equipment Summary</button>
+  <button class="tab-btn" data-tab="users">Users</button>
+</nav>
+
+<main>
+
+  <!-- BREAKDOWN LOG TAB -->
+  <section id="tab-log" class="tab">
+    <div class="card" id="entry-form-card">
+      <h2 id="form-title">Log New Breakdown</h2>
+      <input type="hidden" id="edit-id">
+      <div class="grid">
+        <div><label>Unit / Plant</label><select id="f-unit"></select></div>
+        <div><label>User Department</label><select id="f-userDepartment"></select></div>
+        <div><label>Equipment / Machine</label><input id="f-equipment" list="dl-equipment"><datalist id="dl-equipment"></datalist></div>
+        <div><label>Equipment Code</label><input id="f-equipmentCode"></div>
+        <div><label>Breakdown Type</label><select id="f-breakdownType"></select></div>
+        <div><label>Maintenance Dept</label><select id="f-maintenanceDept"></select></div>
+        <div><label>Intimation Date & Time</label><input type="datetime-local" id="f-intimationDateTime"></div>
+        <div><label>Attended Date & Time</label><input type="datetime-local" id="f-attendedDateTime"></div>
+        <div><label>Restoration Date & Time</label><input type="datetime-local" id="f-restorationDateTime"></div>
+        <div><label>No. of Personnel</label><input type="number" min="0" id="f-noOfPersonnel"></div>
+        <div><label>Personnel Deputed (Names)</label><input id="f-personnelNames" list="dl-personnel"><datalist id="dl-personnel"></datalist></div>
+        <div><label>Status</label><select id="f-status"></select></div>
+        <div><label>Recurring?</label><select id="f-recurring"></select></div>
+        <div><label>Attended By / Shift Incharge</label><input id="f-attendedBy"></div>
+        <div><label>Verified By</label><input id="f-verifiedBy"></div>
+      </div>
+      <div class="grid" style="margin-top:10px;">
+        <div style="grid-column: span 2;"><label>Problem / Nature of Breakdown</label><textarea id="f-problem" style="min-height:44px;"></textarea></div>
+        <div style="grid-column: span 2;"><label>Root Cause</label><textarea id="f-rootCause" style="min-height:44px;"></textarea></div>
+        <div style="grid-column: span 2;"><label>Corrective Action Taken</label><textarea id="f-correctiveAction" style="min-height:44px;"></textarea></div>
+        <div style="position:relative; grid-column: span 2;">
+          <label>Spare / Material Used</label>
+          <input id="f-materialUsed" autocomplete="off" placeholder="Type to search 850+ spares...">
+          <div id="materialUsed-suggestions" class="autocomplete-list" style="display:none;"></div>
+        </div>
+        <div><label>Cost (₹)</label><input type="number" min="0" step="0.01" id="f-cost"></div>
+        <div style="grid-column: span 2;"><label>Remarks</label><textarea id="f-remarks" style="min-height:44px;"></textarea></div>
+      </div>
+      <button class="primary" id="btn-save">Save Breakdown & Close</button>
+      <button class="secondary" id="btn-cancel-edit" style="display:none; margin-left:8px;">Cancel Edit</button>
+      <span class="save-status" id="bd-save-status"></span>
+      <p class="muted" style="margin-top:8px;">Auto-save is on — every change is saved in the background a moment after you stop typing, once Unit/Dept/Equipment/Type/Maint. Dept/Status/Intimation Time are filled in. "Save Breakdown & Close" just finishes this record and clears the form for the next one.</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h2 style="margin:0;">Breakdown Log</h2>
+        <button class="secondary" id="btn-export">Export to Excel</button>
+      </div>
+      <div class="filter-row">
+        <div><label>Search</label><input id="flt-search" placeholder="Problem, equipment, ID..."></div>
+        <div><label>Status</label><select id="flt-status"><option value="">All</option></select></div>
+        <div><label>Unit</label><select id="flt-unit"><option value="">All</option></select></div>
+        <div><label>Maintenance Dept</label><select id="flt-maintDept"><option value="">All</option></select></div>
+        <div><label>From</label><input type="date" id="flt-from"></div>
+        <div><label>To</label><input type="date" id="flt-to"></div>
+        <div><button class="secondary" id="btn-clear-filters">Clear Filters</button></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Breakdown ID</th><th>Date</th><th>Unit</th><th>User Dept</th><th>Equipment</th>
+              <th>Type</th><th>Problem</th><th>Response (Min)</th><th>Repair (Min)</th><th>Downtime (Min)</th>
+              <th>Downtime (Hrs)</th><th>Maint. Dept</th><th>Personnel</th><th>No.</th><th>Status</th>
+              <th>Recurring</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD TAB -->
+  <section id="tab-dashboard" class="tab active">
+    <div class="card">
+      <div class="summary-row" style="margin-bottom:0;">
+        <div><label>From Date</label><input type="date" id="dash-from"></div>
+        <div><label>To Date</label><input type="date" id="dash-to"></div>
+        <div><button class="primary" id="btn-load-dashboard">Load</button></div>
+      </div>
+      <p class="muted" id="backup-status" style="margin:10px 0 0;"></p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="stat-tile">
+        <div class="stat-label">Total Breakdowns</div>
+        <div class="stat-value" id="kpi-total">-</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Open / Pending</div>
+        <div class="stat-value" id="kpi-open" style="color:var(--warning)">-</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Closed</div>
+        <div class="stat-value" id="kpi-closed" style="color:var(--good)">-</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Avg MTTR (Min)</div>
+        <div class="stat-value" id="kpi-mttr">-</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Avg Response (Min)</div>
+        <div class="stat-value" id="kpi-response">-</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>MTTR Trend</h2>
+      <div id="chart-trend"></div>
+    </div>
+
+    <div class="card">
+      <h2>Top 5 Equipment by Downtime</h2>
+      <div id="chart-equip"></div>
+    </div>
+  </section>
+
+  <!-- MASTER DATA TAB -->
+  <section id="tab-master" class="tab">
+    <div class="card">
+      <h2>Master Data — Dropdown Lists</h2>
+      <p class="muted">One item per line. Click Save Master Data after editing. These feed the dropdowns on the Breakdown Log.</p>
+      <div class="grid">
+        <div><label>Unit / Plant</label><textarea id="m-units"></textarea></div>
+        <div><label>User Department</label><textarea id="m-userDepartments"></textarea></div>
+        <div><label>Maintenance Dept</label><textarea id="m-maintenanceDepartments"></textarea></div>
+        <div><label>Breakdown Type</label><textarea id="m-breakdownTypes"></textarea></div>
+        <div><label>Status</label><textarea id="m-statuses"></textarea></div>
+        <div><label>Recurring?</label><textarea id="m-recurringOptions"></textarea></div>
+        <div><label>Personnel</label><textarea id="m-personnel"></textarea></div>
+        <div><label>Equipment</label><textarea id="m-equipment"></textarea></div>
+      </div>
+      <button class="primary" id="btn-save-master">Save Master Data</button>
+      <span class="save-status" id="master-save-status"></span>
+    </div>
+
+    <div class="card">
+      <h2>Materials & Price Master</h2>
+      <p class="muted">Feeds the "Material Used" dropdown on the Breakdown Log — picking one auto-fills its Cost. Items with a Note had more than one price listed in the original spares sheet — the first was used; double-check and correct if needed.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Material Name</th><th>Price (₹)</th><th>Note</th><th></th></tr></thead>
+          <tbody id="materials-tbody"></tbody>
+        </table>
+      </div>
+      <div class="grid" style="margin-top:12px;">
+        <div><label>Material Name</label><input type="text" id="mat-name"></div>
+        <div><label>Price (₹)</label><input type="number" min="0" step="0.01" id="mat-price"></div>
+      </div>
+      <button class="primary" id="btn-add-material">Add Material</button>
+    </div>
+  </section>
+
+  <!-- DAILY MONITORING TAB -->
+  <section id="tab-daily" class="tab">
+    <div class="card">
+      <h2>Daily Breakdown & MTTR Monitoring</h2>
+      <p class="muted">All figures pull automatically from the Breakdown Log.</p>
+      <div class="summary-row">
+        <div><label>Month Start Date</label><input type="date" id="d-start"></div>
+        <div><label>MTTR Target (Minutes)</label><input type="number" id="d-target" value="120"></div>
+        <div><button class="primary" id="btn-load-daily">Load</button></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Total Breakdowns</th><th>Closed</th><th>Pending</th>
+              <th>Total Downtime (Min)</th><th>Total Downtime (Hrs)</th><th>Avg Response (Min)</th>
+              <th>MTTR - Total (Min)</th><th>MTTR - Repair Only (Min)</th><th>MTTR - Total (Hrs)</th>
+              <th>Manpower Deputed</th><th>Total Material Cost (₹)</th><th>MTTR vs Target</th>
+            </tr>
+          </thead>
+          <tbody id="daily-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPT & EQUIPMENT SUMMARY TAB -->
+  <section id="tab-summary" class="tab">
+    <div class="card">
+      <h2>Department / Equipment MTTR Summary</h2>
+      <div class="summary-row">
+        <div><label>From Date</label><input type="date" id="s-from"></div>
+        <div><label>To Date</label><input type="date" id="s-to"></div>
+        <div><button class="primary" id="btn-load-summary">Load</button></div>
+      </div>
+    </div>
+    <div class="card"><h2>A. By Maintenance Department</h2><div class="table-wrap"><table id="tbl-maint"></table></div></div>
+    <div class="card"><h2>B. By User Department</h2><div class="table-wrap"><table id="tbl-user"></table></div></div>
+    <div class="card"><h2>C. By Breakdown Type</h2><div class="table-wrap"><table id="tbl-type"></table></div></div>
+    <div class="card"><h2>D. By Equipment</h2><div class="table-wrap"><table id="tbl-equip"></table></div></div>
+  </section>
+
+  <!-- USERS TAB -->
+  <section id="tab-users" class="tab">
+    <div class="card">
+      <h2>Change My Password</h2>
+      <div class="grid">
+        <div><label>Current Password</label><input id="cp-current" type="password" autocomplete="current-password"></div>
+        <div><label>New Password</label><input id="cp-new" type="password" autocomplete="new-password"></div>
+      </div>
+      <button class="primary" id="btn-change-password">Change Password</button>
+      <div class="error" id="cp-error" style="color:var(--high); font-size:13px; margin-top:8px; display:none;"></div>
+      <div id="cp-success" style="color:#2e7d32; font-size:13px; margin-top:8px; display:none;">Password changed successfully.</div>
+    </div>
+    <div class="card" id="add-user-card">
+      <h2>Add User</h2>
+      <div class="grid">
+        <div><label>Email</label><input id="u-email" type="email"></div>
+        <div><label>Password</label><input id="u-password" type="password" autocomplete="new-password"></div>
+        <div><label>Role</label><select id="u-role"><option value="admin">Admin</option><option value="viewer">Semi-Admin (View Only)</option><option value="editor" selected>Editor (Breakdown Log Only)</option></select></div>
+      </div>
+      <button class="primary" id="btn-add-user">Add User</button>
+      <div class="error" id="user-error" style="color:var(--high); font-size:13px; margin-top:8px; display:none;"></div>
+    </div>
+    <div class="card" id="existing-users-card">
+      <h2>Existing Users</h2>
+      <p class="muted">Admin — full access. Semi-Admin — can see every tab but can't edit anything. Editor — can log/edit/delete Breakdown records only, no Master Data access.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Email</th><th>Role</th><th>Added On</th><th>Actions</th></tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const API = '';
+let masterData = null;
+let breakdowns = [];
+let currentUser = null;
+let currentRole = null;
+const ROLE_LABELS = { admin: 'Admin', viewer: 'Semi-Admin (View Only)', editor: 'Editor (Breakdown Log Only)' };
+
+// Redirect to login on session expiry / unauthenticated API calls, app-wide.
+const nativeFetch = window.fetch;
+window.fetch = async function(...args) {
+  const resp = await nativeFetch(...args);
+  const url = args[0] ? args[0].toString() : '';
+  if (resp.status === 401 && !url.includes('/api/auth/')) {
+    window.location.href = '/login.html';
+  }
+  return resp;
+};
+
+async function checkAuth() {
+  const status = await nativeFetch('/api/auth/status').then(r => r.json());
+  if (!status.user) {
+    window.location.href = '/login.html';
+    return false;
+  }
+  currentUser = status.user;
+  currentRole = currentUser.role || 'editor';
+  document.getElementById('current-user-email').textContent = currentUser.email + ' — ' + (ROLE_LABELS[currentRole] || currentRole);
+  applyRolePermissions();
+  return true;
+}
+
+// admin: unrestricted. viewer ("semi-admin"): can see every tab but nothing is
+// editable anywhere. editor: can log/edit/delete breakdowns only — no Master
+// Data, no Users tab.
+function applyRolePermissions() {
+  // The Users tab itself stays visible to everyone — "Change My Password" is
+  // self-service regardless of role. Only the admin-only sections within it
+  // (adding users, seeing/managing the full user list) are hidden for others.
+  const addUserCard = document.getElementById('add-user-card');
+  const existingUsersCard = document.getElementById('existing-users-card');
+  if (addUserCard) addUserCard.style.display = currentRole === 'admin' ? '' : 'none';
+  if (existingUsersCard) existingUsersCard.style.display = currentRole === 'admin' ? '' : 'none';
+
+  const masterTabBtn = document.querySelector('.tab-btn[data-tab="master"]');
+  if (masterTabBtn) masterTabBtn.style.display = currentRole === 'editor' ? 'none' : '';
+
+  if (currentRole === 'viewer') {
+    const entryCard = document.getElementById('entry-form-card');
+    if (entryCard) entryCard.style.display = 'none';
+    document.querySelectorAll('#tab-master input, #tab-master textarea, #tab-master button').forEach(el => {
+      el.disabled = true;
+    });
+  }
+}
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await fetch(API + '/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+});
+
+// ---------- Tab switching ----------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const leavingLog = document.getElementById('tab-log').classList.contains('active') && btn.dataset.tab !== 'log';
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (leavingLog) flushBdAutoSave();
+    // Refresh on every visit so a breakdown logged elsewhere shows up without
+    // a manual reload — no need to remember to press Load.
+    if (btn.dataset.tab === 'daily') loadDaily();
+    if (btn.dataset.tab === 'summary') loadSummary();
+    if (btn.dataset.tab === 'log') loadBreakdowns();
+  });
+});
+
+// ---------- Helpers ----------
+function fmtDT(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fmtDateOnly(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-');
+  return `${d}-${m}-${y}`;
+}
+function n(v) { return v == null ? '' : v; }
+function fillSelect(sel, options) {
+  sel.innerHTML = options.map(o => `<option value="${o}">${o}</option>`).join('');
+}
+function todayISO() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+// ---------- Master Data ----------
+async function loadMasterData() {
+  masterData = await fetch(API + '/api/master-data').then(r => r.json());
+  if (!masterData.materials) masterData.materials = [];
+  fillSelect(document.getElementById('f-unit'), masterData.units);
+  fillSelect(document.getElementById('f-userDepartment'), masterData.userDepartments);
+  fillSelect(document.getElementById('f-breakdownType'), masterData.breakdownTypes);
+  fillSelect(document.getElementById('f-maintenanceDept'), masterData.maintenanceDepartments);
+  fillSelect(document.getElementById('f-status'), masterData.statuses);
+  fillSelect(document.getElementById('f-recurring'), masterData.recurringOptions);
+  document.getElementById('dl-equipment').innerHTML = masterData.equipment.map(e => `<option value="${e}">`).join('');
+  document.getElementById('dl-personnel').innerHTML = masterData.personnel.map(p => `<option value="${p}">`).join('');
+
+  document.getElementById('m-units').value = masterData.units.join('\n');
+  document.getElementById('m-userDepartments').value = masterData.userDepartments.join('\n');
+  document.getElementById('m-maintenanceDepartments').value = masterData.maintenanceDepartments.join('\n');
+  document.getElementById('m-breakdownTypes').value = masterData.breakdownTypes.join('\n');
+  document.getElementById('m-statuses').value = masterData.statuses.join('\n');
+  document.getElementById('m-recurringOptions').value = masterData.recurringOptions.join('\n');
+  document.getElementById('m-personnel').value = masterData.personnel.join('\n');
+  document.getElementById('m-equipment').value = masterData.equipment.join('\n');
+
+  renderMaterialsTable();
+}
+
+// ---------- Material Used autocomplete (custom — a native <datalist> silently
+// truncates well before 856 entries, so it can't be used for this list) ----------
+const matInput = document.getElementById('f-materialUsed');
+const matList = document.getElementById('materialUsed-suggestions');
+let matActiveIndex = -1;
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderMatSuggestions(query) {
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? masterData.materials.filter(m => m.name.toLowerCase().includes(q))
+    : masterData.materials;
+  matActiveIndex = -1;
+  if (!matches.length) {
+    matList.innerHTML = '<div class="autocomplete-empty">No matching spares.</div>';
+  } else {
+    matList.innerHTML = matches.map((m, i) =>
+      `<div class="autocomplete-item" data-idx="${i}" data-name="${escapeHtml(m.name)}" data-price="${m.price}" data-code="${m.code || ''}">${escapeHtml(m.name)}<span class="ac-price">₹${m.price}</span></div>`
+    ).join('');
+  }
+  matList.style.display = 'block';
+}
+
+function pickMaterial(name, price, code) {
+  matInput.value = name;
+  document.getElementById('f-cost').value = price;
+  document.getElementById('f-equipmentCode').value = code || '';
+  matList.style.display = 'none';
+  matInput.dataset.prevValue = name;
+}
+
+matInput.addEventListener('input', () => renderMatSuggestions(matInput.value));
+
+matInput.addEventListener('focus', () => {
+  matInput.dataset.prevValue = matInput.value;
+  matInput.value = '';
+  renderMatSuggestions('');
+});
+
+matInput.addEventListener('blur', () => {
+  // Delay so a click on a suggestion registers before the list is hidden/reset.
+  setTimeout(() => {
+    matList.style.display = 'none';
+    if (!matInput.value.trim() && matInput.dataset.prevValue) {
+      matInput.value = matInput.dataset.prevValue;
+    }
+  }, 150);
+});
+
+matList.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.autocomplete-item');
+  if (!item) return;
+  e.preventDefault(); // keep focus so the blur handler above doesn't fire first
+  pickMaterial(item.dataset.name, item.dataset.price, item.dataset.code);
+});
+
+matInput.addEventListener('keydown', (e) => {
+  const items = matList.querySelectorAll('.autocomplete-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    matActiveIndex = Math.min(matActiveIndex + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    matActiveIndex = Math.max(matActiveIndex - 1, 0);
+  } else if (e.key === 'Enter' && matActiveIndex >= 0) {
+    e.preventDefault();
+    const item = items[matActiveIndex];
+    pickMaterial(item.dataset.name, item.dataset.price, item.dataset.code);
+    return;
+  } else if (e.key === 'Escape') {
+    matList.style.display = 'none';
+    return;
+  } else {
+    return;
+  }
+  items.forEach(it => it.classList.remove('active'));
+  items[matActiveIndex].classList.add('active');
+  items[matActiveIndex].scrollIntoView({ block: 'nearest' });
+});
+
+function renderMaterialsTable() {
+  const tbody = document.getElementById('materials-tbody');
+  tbody.innerHTML = masterData.materials.map((m, i) => `
+    <tr data-i="${i}">
+      <td><input type="text" data-mat-field="code" value="${m.code || ''}" style="width:90px;"></td>
+      <td><input type="text" data-mat-field="name" value="${m.name}"></td>
+      <td><input type="number" min="0" step="0.01" data-mat-field="price" value="${m.price}"></td>
+      <td><input type="text" data-mat-field="note" value="${m.note || ''}" placeholder="—" style="min-width:220px;"></td>
+      <td class="row-actions">
+        <button class="secondary" data-mat-save="${m.id}">Save</button>
+        <button class="danger" data-mat-del="${m.id}">Delete</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="muted">No materials yet.</td></tr>';
+
+  tbody.querySelectorAll('[data-mat-save]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tr = btn.closest('tr');
+      const i = parseInt(tr.dataset.i);
+      const mat = masterData.materials[i];
+      const code = tr.querySelector('[data-mat-field="code"]').value.trim();
+      const name = tr.querySelector('[data-mat-field="name"]').value.trim();
+      const price = parseFloat(tr.querySelector('[data-mat-field="price"]').value);
+      const note = tr.querySelector('[data-mat-field="note"]').value.trim();
+      if (!name || isNaN(price) || price < 0) { alert('Material name and a valid non-negative price are required.'); return; }
+      mat.code = code;
+      mat.name = name;
+      mat.price = price;
+      mat.note = note;
+      await saveMasterDataObject();
+    });
+  });
+  tbody.querySelectorAll('[data-mat-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this material?')) return;
+      masterData.materials = masterData.materials.filter(m => m.id !== btn.dataset.matDel);
+      await saveMasterDataObject();
+    });
+  });
+  // Re-apply since this table is rebuilt from scratch on every load/save —
+  // a viewer's disabled state doesn't carry over to the new rows otherwise.
+  if (currentRole === 'viewer') {
+    tbody.querySelectorAll('input, button').forEach(el => { el.disabled = true; });
+  }
+}
+
+// Continues the HIGH### sequence from whatever the highest existing number is
+// (not just materials.length), so deleting an item never causes a code clash.
+function nextMaterialCode() {
+  let maxN = 0;
+  for (const m of masterData.materials) {
+    const match = /^HIGH(\d+)$/.exec(m.code || '');
+    if (match) maxN = Math.max(maxN, parseInt(match[1], 10));
+  }
+  return 'HIGH' + String(maxN + 1).padStart(3, '0');
+}
+
+document.getElementById('btn-add-material').addEventListener('click', async () => {
+  const name = document.getElementById('mat-name').value.trim();
+  const price = parseFloat(document.getElementById('mat-price').value);
+  if (!name || isNaN(price) || price < 0) { alert('Material name and a valid non-negative price are required.'); return; }
+  if (masterData.materials.some(m => m.name === name)) { alert('A material named "' + name + '" already exists.'); return; }
+  masterData.materials.push({ id: crypto.randomUUID(), code: nextMaterialCode(), name, price, note: '' });
+  document.getElementById('mat-name').value = '';
+  document.getElementById('mat-price').value = '';
+  await saveMasterDataObject();
+});
+
+// Saves the full masterData object as-is (used by the Materials table's
+// inline add/edit/delete, which mutate masterData.materials directly).
+async function saveMasterDataObject() {
+  masterData = await fetch(API + '/api/master-data', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(masterData)
+  }).then(r => r.json());
+  await loadMasterData();
+}
+
+function linesToArray(id) {
+  return document.getElementById(id).value.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function masterListsFromForm() {
+  return {
+    ...masterData,
+    units: linesToArray('m-units'),
+    userDepartments: linesToArray('m-userDepartments'),
+    maintenanceDepartments: linesToArray('m-maintenanceDepartments'),
+    breakdownTypes: linesToArray('m-breakdownTypes'),
+    statuses: linesToArray('m-statuses'),
+    recurringOptions: linesToArray('m-recurringOptions'),
+    personnel: linesToArray('m-personnel'),
+    equipment: linesToArray('m-equipment')
+  };
+}
+
+function setMasterSaveStatus(status) {
+  const el = document.getElementById('master-save-status');
+  if (!el) return;
+  el.className = 'save-status ' + status;
+  el.textContent = status === 'pending' ? 'Saving…' : status === 'saved' ? 'Saved ✓' : status === 'error' ? 'Not saved ✕' : '';
+}
+
+async function saveMasterLists() {
+  setMasterSaveStatus('pending');
+  try {
+    const resp = await fetch(API + '/api/master-data', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(masterListsFromForm())
+    });
+    if (!resp.ok) { setMasterSaveStatus('error'); return; }
+    await loadMasterData();
+    setMasterSaveStatus('saved');
+  } catch (e) {
+    setMasterSaveStatus('error');
+  }
+}
+
+document.getElementById('btn-save-master').addEventListener('click', async () => {
+  clearTimeout(masterAutoTimer);
+  masterAutoTimer = null;
+  await saveMasterLists();
+});
+
+// Auto-saves the dropdown-list textareas a moment after you stop typing —
+// the button stays as a manual/instant option.
+let masterAutoTimer = null;
+['m-units', 'm-userDepartments', 'm-maintenanceDepartments', 'm-breakdownTypes', 'm-statuses', 'm-recurringOptions', 'm-personnel', 'm-equipment'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    if (currentRole !== 'admin') return;
+    clearTimeout(masterAutoTimer);
+    setMasterSaveStatus('pending');
+    masterAutoTimer = setTimeout(saveMasterLists, 1200);
+  });
+});
+
+// ---------- Breakdown Log ----------
+const FORM_FIELDS = [
+  'unit', 'userDepartment', 'equipment', 'equipmentCode', 'breakdownType', 'problem',
+  'intimationDateTime', 'attendedDateTime', 'restorationDateTime', 'maintenanceDept',
+  'personnelNames', 'noOfPersonnel', 'rootCause', 'correctiveAction',
+  'materialUsed', 'cost',
+  'status', 'recurring', 'attendedBy', 'verifiedBy', 'remarks'
+];
+
+function readForm() {
+  const body = {};
+  for (const f of FORM_FIELDS) {
+    const el = document.getElementById('f-' + f);
+    let val = el.value;
+    if (f === 'intimationDateTime' || f === 'attendedDateTime' || f === 'restorationDateTime') {
+      val = val ? new Date(val).toISOString() : null;
+    }
+    if (f === 'noOfPersonnel') val = val ? parseInt(val, 10) : 0;
+    if (f === 'cost') val = val ? parseFloat(val) : null;
+    body[f] = val;
+  }
+  return body;
+}
+
+function clearForm() {
+  document.getElementById('edit-id').value = '';
+  for (const f of FORM_FIELDS) {
+    const el = document.getElementById('f-' + f);
+    el.value = '';
+  }
+  document.getElementById('f-noOfPersonnel').value = 0;
+  document.getElementById('form-title').textContent = 'Log New Breakdown';
+  document.getElementById('btn-cancel-edit').style.display = 'none';
+}
+
+function fillFormForEdit(rec) {
+  document.getElementById('edit-id').value = rec.id;
+  for (const f of FORM_FIELDS) {
+    const el = document.getElementById('f-' + f);
+    if (f === 'intimationDateTime' || f === 'attendedDateTime' || f === 'restorationDateTime') {
+      el.value = rec[f] ? new Date(rec[f]).toISOString().slice(0, 16) : '';
+    } else {
+      el.value = rec[f] != null ? rec[f] : '';
+    }
+  }
+  document.getElementById('form-title').textContent = 'Edit Breakdown — ' + rec.breakdownId;
+  document.getElementById('btn-cancel-edit').style.display = 'inline-block';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.getElementById('btn-cancel-edit').addEventListener('click', () => {
+  clearTimeout(bdAutoSaveTimer);
+  bdAutoSaveTimer = null;
+  setBdSaveStatus('');
+  clearForm();
+});
+
+// ---------- Breakdown auto-save ----------
+const BD_AUTO_SAVE_DELAY_MS = 1200;
+let bdAutoSaveTimer = null;
+
+function setBdSaveStatus(status) {
+  const el = document.getElementById('bd-save-status');
+  if (!el) return;
+  el.className = 'save-status ' + status;
+  el.textContent = status === 'pending' ? 'Saving…' : status === 'saved' ? 'Saved ✓' : status === 'error' ? 'Not saved ✕' : '';
+}
+
+function scheduleBdAutoSave() {
+  if (currentRole === 'viewer') return; // no write access; nothing to save
+  clearTimeout(bdAutoSaveTimer);
+  bdAutoSaveTimer = null;
+  const body = readForm();
+  if (validateFormClientSide(body)) { setBdSaveStatus(''); return; }
+  setBdSaveStatus('pending');
+  bdAutoSaveTimer = setTimeout(autoSaveBreakdown, BD_AUTO_SAVE_DELAY_MS);
+}
+
+async function autoSaveBreakdown() {
+  bdAutoSaveTimer = null;
+  const body = readForm();
+  if (validateFormClientSide(body)) { setBdSaveStatus(''); return; }
+  setBdSaveStatus('pending');
+  const id = document.getElementById('edit-id').value;
+  const url = id ? API + '/api/breakdowns/' + id : API + '/api/breakdowns';
+  const method = id ? 'PUT' : 'POST';
+  try {
+    const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!resp.ok) { setBdSaveStatus('error'); return; }
+    const saved = await resp.json();
+    document.getElementById('edit-id').value = saved.id;
+    setBdSaveStatus('saved');
+    await loadBreakdowns();
+  } catch (e) {
+    setBdSaveStatus('error');
+  }
+}
+
+async function flushBdAutoSave() {
+  if (!bdAutoSaveTimer) return;
+  clearTimeout(bdAutoSaveTimer);
+  bdAutoSaveTimer = null;
+  await autoSaveBreakdown();
+}
+
+FORM_FIELDS.forEach(f => {
+  const el = document.getElementById('f-' + f);
+  if (!el) return;
+  el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', scheduleBdAutoSave);
+});
+
+const REQUIRED_FORM_FIELDS = ['unit', 'userDepartment', 'equipment', 'breakdownType', 'maintenanceDept', 'status', 'intimationDateTime'];
+
+function validateFormClientSide(body) {
+  for (const f of REQUIRED_FORM_FIELDS) {
+    if (!body[f]) return `Please fill "${f.replace(/([A-Z])/g, ' $1')}".`;
+  }
+  if (body.attendedDateTime && new Date(body.attendedDateTime) < new Date(body.intimationDateTime)) {
+    return 'Attended Date & Time cannot be before Intimation Date & Time.';
+  }
+  if (body.restorationDateTime) {
+    const ref = body.attendedDateTime || body.intimationDateTime;
+    if (new Date(body.restorationDateTime) < new Date(ref)) {
+      return 'Restoration Date & Time cannot be before Attended (or Intimation) Date & Time.';
+    }
+  }
+  return null;
+}
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  clearTimeout(bdAutoSaveTimer);
+  bdAutoSaveTimer = null;
+  const id = document.getElementById('edit-id').value;
+  const body = readForm();
+  const clientError = validateFormClientSide(body);
+  if (clientError) { alert(clientError); return; }
+
+  const url = id ? API + '/api/breakdowns/' + id : API + '/api/breakdowns';
+  const method = id ? 'PUT' : 'POST';
+  const resp = await fetch(url, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert('Could not save: ' + (err.error || resp.statusText));
+    return;
+  }
+  setBdSaveStatus('');
+  clearForm();
+  await loadBreakdowns();
+});
+
+async function loadBreakdowns() {
+  breakdowns = await fetch(API + '/api/breakdowns').then(r => r.json());
+  breakdowns.sort((a, b) => (a.intimationDateTime || '').localeCompare(b.intimationDateTime || ''));
+  populateFilterOptions();
+  renderLogTable();
+}
+
+function populateFilterOptions() {
+  const statusSel = document.getElementById('flt-status');
+  const unitSel = document.getElementById('flt-unit');
+  const deptSel = document.getElementById('flt-maintDept');
+  const keep = (sel) => sel.value;
+  const prevStatus = keep(statusSel), prevUnit = keep(unitSel), prevDept = keep(deptSel);
+  statusSel.innerHTML = '<option value="">All</option>' + masterData.statuses.map(s => `<option value="${s}">${s}</option>`).join('');
+  unitSel.innerHTML = '<option value="">All</option>' + masterData.units.map(u => `<option value="${u}">${u}</option>`).join('');
+  deptSel.innerHTML = '<option value="">All</option>' + masterData.maintenanceDepartments.map(d => `<option value="${d}">${d}</option>`).join('');
+  statusSel.value = prevStatus; unitSel.value = prevUnit; deptSel.value = prevDept;
+}
+
+function getFilteredBreakdowns() {
+  const search = document.getElementById('flt-search').value.trim().toLowerCase();
+  const status = document.getElementById('flt-status').value;
+  const unit = document.getElementById('flt-unit').value;
+  const maintDept = document.getElementById('flt-maintDept').value;
+  const from = document.getElementById('flt-from').value;
+  const to = document.getElementById('flt-to').value;
+
+  return breakdowns.filter(r => {
+    if (status && r.status !== status) return false;
+    if (unit && r.unit !== unit) return false;
+    if (maintDept && r.maintenanceDept !== maintDept) return false;
+    if (from && r.date && r.date < from) return false;
+    if (to && r.date && r.date > to) return false;
+    if (search) {
+      const hay = `${r.problem || ''} ${r.equipment || ''} ${r.breakdownId || ''} ${r.rootCause || ''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+['flt-search', 'flt-status', 'flt-unit', 'flt-maintDept', 'flt-from', 'flt-to'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderLogTable);
+});
+document.getElementById('btn-clear-filters').addEventListener('click', () => {
+  ['flt-search', 'flt-status', 'flt-unit', 'flt-maintDept', 'flt-from', 'flt-to'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  renderLogTable();
+});
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  const from = document.getElementById('flt-from').value;
+  const to = document.getElementById('flt-to').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  window.location.href = API + '/api/export' + (params.toString() ? '?' + params.toString() : '');
+});
+
+function renderLogTable() {
+  const filtered = getFilteredBreakdowns();
+  const tbody = document.getElementById('log-body');
+  tbody.innerHTML = filtered.map(r => `
+    <tr>
+      <td>${n(r.breakdownId)}</td>
+      <td>${fmtDateOnly(r.date)}</td>
+      <td>${n(r.unit)}</td>
+      <td>${n(r.userDepartment)}</td>
+      <td>${n(r.equipment)}</td>
+      <td>${n(r.breakdownType)}</td>
+      <td>${n(r.problem)}</td>
+      <td>${n(r.responseTimeMin)}</td>
+      <td>${n(r.repairTimeMin)}</td>
+      <td>${n(r.totalDowntimeMin)}</td>
+      <td>${n(r.totalDowntimeHrs)}</td>
+      <td>${n(r.maintenanceDept)}</td>
+      <td>${n(r.personnelNames)}</td>
+      <td>${n(r.noOfPersonnel)}</td>
+      <td><span class="pill ${(r.status||'').replace(/\s|\//g,'')}">${n(r.status)}</span></td>
+      <td>${n(r.recurring)}</td>
+      <td class="row-actions">
+        ${currentRole !== 'viewer' ? `<button class="secondary" onclick="editBreakdown('${r.id}')">Edit</button>
+        <button class="danger" onclick="deleteBreakdown('${r.id}')">Delete</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+window.editBreakdown = function(id) {
+  const rec = breakdowns.find(r => r.id === id);
+  if (rec) fillFormForEdit(rec);
+};
+
+window.deleteBreakdown = async function(id) {
+  if (!confirm('Delete this breakdown record?')) return;
+  await fetch(API + '/api/breakdowns/' + id, { method: 'DELETE' });
+  await loadBreakdowns();
+};
+
+// ---------- Daily Monitoring ----------
+document.getElementById('btn-load-daily').addEventListener('click', loadDaily);
+// Auto-refreshes as soon as the date or target changes — the Load button is
+// just a manual fallback now, not required.
+let dailyAutoTimer = null;
+['d-start', 'd-target'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(dailyAutoTimer);
+    dailyAutoTimer = setTimeout(loadDaily, 500);
+  });
+});
+
+async function loadDaily() {
+  const start = document.getElementById('d-start').value || todayISO();
+  const target = document.getElementById('d-target').value || 120;
+  const data = await fetch(`${API}/api/daily-monitoring?start=${start}&target=${target}`).then(r => r.json());
+  const rowHtml = row => `
+    <tr>
+      <td>${fmtDateOnly(row.date)}</td>
+      <td>${n(row.totalBreakdowns)}</td>
+      <td>${n(row.closed)}</td>
+      <td>${n(row.pending)}</td>
+      <td>${n(row.totalDowntimeMin)}</td>
+      <td>${n(row.totalDowntimeHrs)}</td>
+      <td>${n(row.avgResponseTimeMin)}</td>
+      <td>${n(row.mttrTotalMin)}</td>
+      <td>${n(row.mttrRepairOnlyMin)}</td>
+      <td>${n(row.mttrTotalHrs)}</td>
+      <td>${n(row.manpowerDeputed)}</td>
+      <td>${n(row.totalMaterialCost)}</td>
+      <td class="${row.mttrVsTarget === 'OK' ? 'vs-ok' : row.mttrVsTarget === 'HIGH' ? 'vs-high' : ''}">${n(row.mttrVsTarget)}</td>
+    </tr>`;
+  let html = data.days.map(rowHtml).join('');
+  html += `<tr style="font-weight:700; background:#eef2f7;">
+      <td>MONTH TOTAL / AVERAGE</td>
+      <td>${n(data.monthTotal.totalBreakdowns)}</td>
+      <td>${n(data.monthTotal.closed)}</td>
+      <td>${n(data.monthTotal.pending)}</td>
+      <td>${n(data.monthTotal.totalDowntimeMin)}</td>
+      <td>${n(data.monthTotal.totalDowntimeHrs)}</td>
+      <td>${n(data.monthTotal.avgResponseTimeMin)}</td>
+      <td>${n(data.monthTotal.mttrTotalMin)}</td>
+      <td>${n(data.monthTotal.mttrRepairOnlyMin)}</td>
+      <td>${n(data.monthTotal.mttrTotalHrs)}</td>
+      <td>${n(data.monthTotal.manpowerDeputed)}</td>
+      <td>${n(data.monthTotal.totalMaterialCost)}</td>
+      <td class="${data.monthTotal.mttrVsTarget === 'OK' ? 'vs-ok' : data.monthTotal.mttrVsTarget === 'HIGH' ? 'vs-high' : ''}">${n(data.monthTotal.mttrVsTarget)}</td>
+    </tr>`;
+  document.getElementById('daily-body').innerHTML = html;
+}
+
+// ---------- Dept & Equipment Summary ----------
+document.getElementById('btn-load-summary').addEventListener('click', loadSummary);
+let summaryAutoTimer = null;
+['s-from', 's-to'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(summaryAutoTimer);
+    summaryAutoTimer = setTimeout(loadSummary, 500);
+  });
+});
+
+function renderSummaryTable(el, rows, nameLabel) {
+  const head = `<thead><tr>
+    <th>${nameLabel}</th><th>Breakdowns</th><th>Total Downtime (Min)</th><th>Total Downtime (Hrs)</th>
+    <th>MTTR - Total (Min)</th><th>Avg Response (Min)</th><th>Pending</th><th>% of Total Downtime</th>
+  </tr></thead>`;
+  const body = rows.map(r => `
+    <tr>
+      <td>${n(r.name)}</td>
+      <td>${n(r.breakdowns)}</td>
+      <td>${n(r.totalDowntimeMin)}</td>
+      <td>${n(r.totalDowntimeHrs)}</td>
+      <td>${n(r.mttrTotalMin)}</td>
+      <td>${n(r.avgResponseMin)}</td>
+      <td>${n(r.pending)}</td>
+      <td>${r.pctOfTotalDowntime}%</td>
+    </tr>`).join('');
+  el.innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
+async function loadSummary() {
+  const from = document.getElementById('s-from').value || todayISO();
+  const to = document.getElementById('s-to').value || todayISO();
+  const data = await fetch(`${API}/api/dept-summary?from=${from}&to=${to}`).then(r => r.json());
+  renderSummaryTable(document.getElementById('tbl-maint'), data.byMaintenanceDept, 'Maintenance Dept');
+  renderSummaryTable(document.getElementById('tbl-user'), data.byUserDept, 'User Department');
+  renderSummaryTable(document.getElementById('tbl-type'), data.byBreakdownType, 'Breakdown Type');
+  renderSummaryTable(document.getElementById('tbl-equip'), data.byEquipment, 'Equipment / Machine');
+}
+
+// ---------- Dashboard ----------
+document.getElementById('btn-load-dashboard').addEventListener('click', loadDashboard);
+
+async function loadDashboard() {
+  const from = document.getElementById('dash-from').value || todayISO();
+  const to = document.getElementById('dash-to').value || todayISO();
+  const data = await fetch(`${API}/api/dashboard?from=${from}&to=${to}`).then(r => r.json());
+  document.getElementById('kpi-total').textContent = data.kpis.total;
+  document.getElementById('kpi-open').textContent = data.kpis.open;
+  document.getElementById('kpi-closed').textContent = data.kpis.closed;
+  document.getElementById('kpi-mttr').textContent = data.kpis.avgMttrMin != null ? data.kpis.avgMttrMin : '-';
+  document.getElementById('kpi-response').textContent = data.kpis.avgResponseMin != null ? data.kpis.avgResponseMin : '-';
+  renderTrendChart(document.getElementById('chart-trend'), data.trend);
+  renderEquipBarChart(document.getElementById('chart-equip'), data.topEquipment);
+  loadBackupStatus();
+}
+
+async function loadBackupStatus() {
+  try {
+    const status = await fetch(API + '/api/backup-status').then(r => r.json());
+    const el = document.getElementById('backup-status');
+    if (!status.lastBackup) {
+      el.textContent = 'No backup yet — first backup runs automatically on server start.';
+    } else {
+      el.textContent = `Last backup: ${fmtDateOnly(status.lastBackup)} · ${status.count} day(s) kept · ${status.location}`;
+    }
+  } catch (e) { /* non-critical */ }
+}
+
+function niceCeil(v) {
+  if (v <= 0) return 10;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / mag;
+  let niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return niceNorm * mag;
+}
+
+function renderTrendChart(container, data) {
+  if (!data.length) {
+    container.innerHTML = '<div class="chart-empty">No breakdowns in this range.</div>';
+    return;
+  }
+  const width = container.clientWidth || 600;
+  const height = 260;
+  const padL = 46, padR = 16, padT = 16, padB = 30;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+
+  const maxVal = Math.max(...data.map(d => d.mttrMin || 0), 1);
+  const yMax = niceCeil(maxVal);
+  const yTickCount = 4;
+
+  const xFor = i => padL + (data.length === 1 ? plotW / 2 : (i / (data.length - 1)) * plotW);
+  const yFor = v => padT + plotH - (v / yMax) * plotH;
+
+  const points = data.map((d, i) => [xFor(i), yFor(d.mttrMin || 0)]);
+  const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+
+  let gridSvg = '';
+  for (let t = 0; t <= yTickCount; t++) {
+    const v = (yMax / yTickCount) * t;
+    const y = yFor(v);
+    gridSvg += `<line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="var(--gridline)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--ink-muted)">${Math.round(v)}</text>`;
+  }
+
+  const xTickIdxs = [...new Set(data.length > 1 ? [0, Math.floor((data.length - 1) / 2), data.length - 1] : [0])];
+  const xTicksSvg = xTickIdxs.map(i => `<text x="${xFor(i)}" y="${height - 8}" text-anchor="middle" font-size="11" fill="var(--ink-muted)">${fmtDateOnly(data[i].date)}</text>`).join('');
+
+  const endPoint = points[points.length - 1];
+
+  container.innerHTML = `
+    <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow:visible; display:block;">
+      ${gridSvg}
+      <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="var(--baseline)" stroke-width="1"/>
+      <path d="${linePath}" fill="none" stroke="var(--seq-blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${endPoint[0]}" cy="${endPoint[1]}" r="4" fill="var(--seq-blue)" stroke="var(--chart-surface)" stroke-width="2"/>
+      ${xTicksSvg}
+      <g id="trend-crosshair" style="display:none;">
+        <line id="trend-crosshair-line" y1="${padT}" y2="${padT + plotH}" stroke="var(--baseline)" stroke-width="1"/>
+        <circle id="trend-crosshair-dot" r="5" fill="var(--seq-blue)" stroke="var(--chart-surface)" stroke-width="2"/>
+      </g>
+      <rect id="trend-hit" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent"/>
+    </svg>
+    <div class="chart-tooltip" id="trend-tooltip"></div>
+  `;
+
+  const svgEl = container.querySelector('svg');
+  const hitRect = container.querySelector('#trend-hit');
+  const crosshair = container.querySelector('#trend-crosshair');
+  const crosshairLine = container.querySelector('#trend-crosshair-line');
+  const crosshairDot = container.querySelector('#trend-crosshair-dot');
+  const tooltip = container.querySelector('#trend-tooltip');
+
+  function handleMove(evt) {
+    const rect = svgEl.getBoundingClientRect();
+    const scaleX = width / rect.width;
+    const px = (evt.clientX - rect.left) * scaleX;
+    let idx = Math.round(((px - padL) / plotW) * (data.length - 1));
+    idx = Math.max(0, Math.min(data.length - 1, idx));
+    const [x, y] = points[idx];
+    crosshairLine.setAttribute('x1', x);
+    crosshairLine.setAttribute('x2', x);
+    crosshairDot.setAttribute('cx', x);
+    crosshairDot.setAttribute('cy', y);
+    crosshair.style.display = '';
+    const containerRect = container.getBoundingClientRect();
+    tooltip.style.left = (x / width) * containerRect.width + 'px';
+    tooltip.style.top = (y / height) * containerRect.height + 'px';
+    const label = document.createElement('span');
+    label.className = 'tt-label';
+    label.textContent = fmtDateOnly(data[idx].date);
+    const value = document.createElement('span');
+    value.className = 'tt-value';
+    value.textContent = (data[idx].mttrMin != null ? data[idx].mttrMin : 0) + ' min';
+    tooltip.innerHTML = '';
+    tooltip.appendChild(label);
+    tooltip.appendChild(document.createElement('br'));
+    tooltip.appendChild(value);
+    tooltip.classList.add('show');
+  }
+  function handleLeave() {
+    crosshair.style.display = 'none';
+    tooltip.classList.remove('show');
+  }
+  hitRect.addEventListener('pointermove', handleMove);
+  hitRect.addEventListener('pointerleave', handleLeave);
+}
+
+function renderEquipBarChart(container, data) {
+  if (!data.length) {
+    container.innerHTML = '<div class="chart-empty">No breakdowns in this range.</div>';
+    return;
+  }
+  const maxVal = Math.max(...data.map(d => d.totalDowntimeMin || 0), 1);
+  container.innerHTML = data.map(d => {
+    const pct = Math.max(((d.totalDowntimeMin || 0) / maxVal) * 100, 2);
+    return `<div class="bar-row">
+      <div class="bar-name" title="${d.name}"></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <div class="bar-value"></div>
+    </div>`;
+  }).join('');
+  // set text via textContent to keep names/values as untrusted data
+  container.querySelectorAll('.bar-row').forEach((row, i) => {
+    row.querySelector('.bar-name').textContent = data[i].name;
+    row.querySelector('.bar-value').textContent = (data[i].totalDowntimeMin || 0) + ' min';
+    row.title = `${data[i].name}: ${data[i].totalDowntimeMin || 0} min`;
+  });
+}
+
+// ---------- Users management ----------
+async function loadUsers() {
+  if (currentRole !== 'admin') return; // /api/users is admin-only; the tab is hidden for everyone else anyway.
+  const resp = await fetch(API + '/api/users');
+  if (!resp.ok) return;
+  const users = await resp.json();
+  const tbody = document.getElementById('users-body');
+  tbody.innerHTML = '';
+  users.forEach(u => {
+    const tr = document.createElement('tr');
+    const tdEmail = document.createElement('td'); tdEmail.textContent = u.email;
+    const tdRole = document.createElement('td');
+    const roleSel = document.createElement('select');
+    roleSel.innerHTML = Object.keys(ROLE_LABELS).map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('');
+    roleSel.addEventListener('change', async () => {
+      const resp = await fetch(API + '/api/users/' + u.id + '/role', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: roleSel.value })
+      });
+      if (!resp.ok) { const err = await resp.json().catch(() => ({})); alert(err.error || 'Could not change role.'); await loadUsers(); }
+    });
+    tdRole.appendChild(roleSel);
+    const tdDate = document.createElement('td'); tdDate.textContent = fmtDateOnly(u.createdAt ? u.createdAt.slice(0, 10) : '');
+    const tdActions = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'danger';
+    delBtn.textContent = u.id === currentUser.id ? 'Delete (you)' : 'Delete';
+    delBtn.addEventListener('click', () => deleteUser(u.id, u.email));
+    tdActions.appendChild(delBtn);
+    tr.append(tdEmail, tdRole, tdDate, tdActions);
+    tbody.appendChild(tr);
+  });
+}
+
+async function deleteUser(id, email) {
+  if (!confirm(`Remove user "${email}"?`)) return;
+  const resp = await fetch(API + '/api/users/' + id, { method: 'DELETE' });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert('Could not remove user: ' + (err.error || resp.statusText));
+    return;
+  }
+  const result = await resp.json();
+  if (result.selfDeleted) { window.location.href = '/login.html'; return; }
+  await loadUsers();
+}
+
+document.getElementById('btn-add-user').addEventListener('click', async () => {
+  const email = document.getElementById('u-email').value.trim();
+  const password = document.getElementById('u-password').value;
+  const role = document.getElementById('u-role').value;
+  const errEl = document.getElementById('user-error');
+  errEl.classList.remove('show'); errEl.style.display = 'none';
+
+  const resp = await fetch(API + '/api/users', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, role })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    errEl.textContent = err.error || 'Could not add user.';
+    errEl.style.display = 'block';
+    return;
+  }
+  document.getElementById('u-email').value = '';
+  document.getElementById('u-password').value = '';
+  await loadUsers();
+});
+
+document.getElementById('btn-change-password').addEventListener('click', async () => {
+  const currentPassword = document.getElementById('cp-current').value;
+  const newPassword = document.getElementById('cp-new').value;
+  const errEl = document.getElementById('cp-error');
+  const okEl = document.getElementById('cp-success');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+
+  const resp = await fetch(API + '/api/auth/change-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    errEl.textContent = err.error || 'Could not change password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  document.getElementById('cp-current').value = '';
+  document.getElementById('cp-new').value = '';
+  okEl.style.display = 'block';
+});
+
+// ---------- Init ----------
+(async function init() {
+  const ok = await checkAuth();
+  if (!ok) return;
+
+  await loadMasterData();
+  await loadBreakdowns();
+  await loadUsers();
+  const today = new Date();
+  const monthStart = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-01`;
+  document.getElementById('d-start').value = monthStart;
+  document.getElementById('s-from').value = monthStart;
+  document.getElementById('s-to').value = todayISO();
+  document.getElementById('dash-from').value = monthStart;
+  document.getElementById('dash-to').value = todayISO();
+  await loadDaily();
+  await loadSummary();
+  await loadDashboard();
+})();
+</script>
+</body>
+</html>

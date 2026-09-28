@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - MTTR Tracker</title>
+<style>
+  :root {
+    --blue: #1a5fb4;
+    --blue-light: #e8f0fb;
+    --grey: #f4f5f7;
+    --border: #d8dce1;
+    --text: #222;
+    --high: #c62828;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Segoe UI, Arial, sans-serif; margin: 0; background: var(--grey); color: var(--text);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .box { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 32px; width: 100%; max-width: 380px; }
+  .box h1 { margin: 0 0 4px; font-size: 20px; color: var(--blue); }
+  .box p.sub { margin: 0 0 22px; font-size: 13px; color: #666; }
+  label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; margin-top: 14px; }
+  label:first-of-type { margin-top: 0; }
+  input {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px;
+  }
+  button.primary {
+    width: 100%; background: var(--blue); color: #fff; border: none; padding: 10px;
+    border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 20px; font-weight: 600;
+  }
+  button.primary:hover { background: #154a8f; }
+  button.primary:disabled { opacity: 0.6; cursor: default; }
+  .error { color: var(--high); font-size: 13px; margin-top: 12px; display: none; }
+  .error.show { display: block; }
+  .toggle { text-align: center; margin-top: 16px; font-size: 13px; color: #666; }
+  .toggle a { color: var(--blue); cursor: pointer; text-decoration: none; }
+  .toggle a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h1 id="title">Sign in</h1>
+  <p class="sub" id="subtitle">Maintenance Breakdown & MTTR Tracker — Highflow Industries</p>
+
+  <form id="form">
+    <label>Email</label>
+    <input id="f-email" type="email" autocomplete="username" required>
+    <label>Password</label>
+    <input id="f-password" type="password" autocomplete="current-password" required>
+    <button class="primary" type="submit" id="btn-submit">Sign in</button>
+    <div class="error" id="error"></div>
+  </form>
+</div>
+
+<script>
+let mode = 'login'; // or 'setup'
+
+function applyMode() {
+  const isSetup = mode === 'setup';
+  document.getElementById('title').textContent = isSetup ? 'Create Admin Account' : 'Sign in';
+  document.getElementById('subtitle').textContent = isSetup
+    ? 'First-time setup — create the first login for this tracker.'
+    : 'Maintenance Breakdown & MTTR Tracker — Highflow Industries';
+  document.getElementById('btn-submit').textContent = isSetup ? 'Create Account & Sign In' : 'Sign in';
+  document.getElementById('f-password').autocomplete = isSetup ? 'new-password' : 'current-password';
+}
+
+async function init() {
+  const status = await fetch('/api/auth/status').then(r => r.json());
+  if (status.user) {
+    window.location.href = '/';
+    return;
+  }
+  mode = status.setupNeeded ? 'setup' : 'login';
+  applyMode();
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  document.getElementById('error').classList.remove('show');
+  const email = document.getElementById('f-email').value.trim();
+  const password = document.getElementById('f-password').value;
+  const btn = document.getElementById('btn-submit');
+
+  if (mode === 'setup') {
+    if (password.length < 6) { showError('Password must be at least 6 characters.'); return; }
+    btn.disabled = true;
+    const resp = await fetch('/api/auth/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    btn.disabled = false;
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); showError(err.error || 'Could not create account.'); return; }
+    window.location.href = '/';
+  } else {
+    btn.disabled = true;
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    btn.disabled = false;
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); showError(err.error || 'Invalid email or password.'); return; }
+    window.location.href = '/';
+  }
+});
+
+init();
+</script>
+</body>
+</html>
